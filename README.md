@@ -1,36 +1,81 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Architecture
 
-## Getting Started
-
-First, run the development server:
-
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+```text
+                WebRTC (WHIP)
++--------+  ───────────────────▶  +-----------+
+|  Host  |                        | MediaMTX  |
++--------+                        +-----------+
+                                       │
+                                       │ Generates LL-HLS
+                                       ▼
+                                 +-----------+
+                                 |    CDN    |
+                                 +-----------+
+                                       │
+                  ┌────────────────────┼────────────────────┐
+                  ▼                    ▼                    ▼
+             +---------+          +---------+          +---------+
+             | Viewer  |          | Viewer  |    ...   | Viewer  |
+             +---------+          +---------+          +---------+
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Flow
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+1. The **host** publishes audio/video to **MediaMTX** using **WebRTC (WHIP)**.
+2. **MediaMTX** converts the incoming stream into **Low-Latency HLS (LL-HLS)**.
+3. The generated HLS playlist, segments, and parts are cached and distributed by a **CDN**.
+4. **Viewers** play the stream using **HLS.js**, achieving approximately **500 ms** end-to-end latency in local testing.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Why this architecture?
 
-## Learn More
+A pure WebRTC broadcast requires the media server to maintain and forward a media stream to every connected viewer.
 
-To learn more about Next.js, take a look at the following resources:
+```
+Host → Media Server → 1,000,000 WebRTC viewers
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+As the audience grows, the server's bandwidth and CPU usage increase significantly.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+This project instead uses a hybrid architecture:
 
-## Deploy on Vercel
+- **WebRTC (WHIP)** for ultra-low latency publishing.
+- **Low-Latency HLS** for viewer playback.
+- **CDN** for global distribution.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+After MediaMTX generates LL-HLS segments, viewers simply download them over HTTP. Since the content is cacheable, most requests are served directly from the CDN rather than the MediaMTX server.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```
+Host
+   │
+WebRTC (WHIP)
+   │
+MediaMTX
+   │
+LL-HLS
+   │
+CDN
+   ├── Viewer 1
+   ├── Viewer 2
+   ├── Viewer 3
+   └── ...
+```
+
+## Benefits
+
+- 🚀 ~500 ms end-to-end latency (local testing)
+- 🌍 CDN-powered global distribution
+- 📈 Designed to scale to millions of concurrent viewers when deployed behind a CDN
+- 💰 Lower infrastructure cost than large-scale WebRTC broadcasting
+- ⚡ Minimal load on the origin server
+- 🛠️ Simple architecture built on open standards
+
+## Tech Stack
+
+- **Next.js** – Frontend
+- **React** – UI
+- **TypeScript** – Type safety
+- **Chakra UI** – Component library
+- **MediaMTX** – Streaming server
+- **WebRTC (WHIP)** – Host publishing
+- **Low-Latency HLS** – Viewer playback
+- **HLS.js** – Browser player
